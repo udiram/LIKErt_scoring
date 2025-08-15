@@ -10,8 +10,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'secret-key')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///reviews.db')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY',)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -238,8 +238,9 @@ init_cli = AppGroup('init')
 
 @init_cli.command('db')
 def init_db_command():
-    init_db()
-    print('Initialized the database.')
+    with app.app_context():
+        init_db()
+        print('Initialized the database.')
 
 app.cli.add_command(init_cli)
 
