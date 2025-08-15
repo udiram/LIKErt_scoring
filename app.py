@@ -246,5 +246,5 @@ app.cli.add_command(init_cli)
 
 if __name__ == '__main__':
     with app.app_context():
-        init_db()  # Initialize database and populate cards
+        init_db()  # Initialize database and populate all cards
     app.run(debug=False)
