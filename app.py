@@ -1,12 +1,21 @@
-from flask import Flask, session, request, redirect, render_template, url_for, flash, get_flashed_messages
+from flask import Flask, session, request, redirect, render_template, url_for, flash
 import sqlite3
-import time
+import csv
 import os
-import subprocess
-from database import get_db_connection  # Import our new helper
+import time
+import datetime
+from datetime import timedelta
+from sqlalchemy import func, desc
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 
 app = Flask(__name__)
-app.secret_key = 'a-much-better-secret-key-in-production'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'secret-key')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///reviews.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
 # A lock is considered "stale" or abandoned if it's older than this (in seconds)
 STALE_LOCK_TIMEOUT = 300  # 5 minutes
@@ -18,20 +27,70 @@ BAD_REASONS = {
     '3': 'Completely incorrect'
 }
 
+class Card(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    input_text = db.Column(db.Text, nullable=False)
+    output_text = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(50), default='available')
+    locked_by = db.Column(db.String(100))
+    locked_at = db.Column(db.DateTime)
+
+class Review(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    card_id = db.Column(db.Integer, db.ForeignKey('card.id'), nullable=False)
+    reviewer_name = db.Column(db.String(100), nullable=False)
+    decision = db.Column(db.String(50), nullable=False)
+    reason = db.Column(db.String(255))
+    time_spent = db.Column(db.Integer)
+    reviewed_at = db.Column(db.DateTime, default=datetime.datetime.now)
+
+def init_db():
+    """Initializes the database, creating tables and populating cards from the CSV."""
+    DATABASE_FILE = 'instance/reviews.db'
+    print("Initializing database...")
+    if os.path.exists(DATABASE_FILE):
+        print("Database already exists. Skipping initialization.")
+        return
+
+    print("Creating new database...")
+    with app.app_context():
+        db.create_all()
+        print("Created 'cards' and 'reviews' tables.")
+
+        # Populate the 'cards' table from the CSV file
+        print("Populating cards from corrected_UAB_names.csv...")
+        try:
+            with open('corrected_UAB_names.csv', 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                cards_to_insert = [
+                    Card(input_text=row['Value'], output_text=row['Model Corrected Name'])
+                    for row in reader
+                ]
+                db.session.bulk_save_objects(cards_to_insert)
+                db.session.commit()
+                print(f"Successfully inserted {len(cards_to_insert)} cards.")
+        except FileNotFoundError:
+            print("Error: corrected_UAB_names.csv not found. Please add it to the directory.")
+        except Exception as e:
+            print(f"An error occurred during population: {e}")
+            db.session.rollback()
+
 @app.before_request
 def release_stale_locks():
     """
     Run before each request to release any locks that have timed out.
     This prevents cards from being stuck if a user closes their browser.
     """
-    conn = get_db_connection()
-    # The '?' substitution calculates the timestamp on the fly
-    conn.execute(
-        "UPDATE cards SET status = 'available', locked_by = NULL, locked_at = NULL WHERE status = 'locked' AND locked_at < datetime('now', '-' || ? || ' seconds')",
-        (STALE_LOCK_TIMEOUT,)
-    )
-    conn.commit()
-    conn.close()
+    stale_time = datetime.datetime.now() - timedelta(seconds=STALE_LOCK_TIMEOUT)
+    db.session.query(Card).filter(
+        Card.status == 'locked',
+        Card.locked_at < stale_time
+    ).update({
+        Card.status: 'available',
+        Card.locked_by: None,
+        Card.locked_at: None
+    })
+    db.session.commit()
 
 @app.route('/')
 def index():
@@ -52,73 +111,53 @@ def review():
         return redirect(url_for('index'))
 
     reviewer_name = session['name']
-    conn = get_db_connection()
     card = None
 
     # 1. Check if this user already has a card locked out
-    card = conn.execute(
-        "SELECT id, input_text AS input, output_text AS output FROM cards WHERE status = 'locked' AND locked_by = ?",
-        (reviewer_name,)
-    ).fetchone()
+    locked_card = Card.query.filter_by(status='locked', locked_by=reviewer_name).first()
+    if locked_card:
+        card = {
+            'id': locked_card.id,
+            'input': locked_card.input_text,
+            'output': locked_card.output_text
+        }
 
     if not card:
-        # 2. If not, find a new, available card and lock it atomically.
-        # This is the core of the concurrency solution.
-        with conn:  # 'with conn' creates a transaction
-            # Find an available card that this user has NEVER reviewed before.
-            available_card = conn.execute(
-                """
-                SELECT id FROM cards
-                WHERE status = 'available' AND id NOT IN (
-                    SELECT card_id FROM reviews WHERE reviewer_name = ?
-                )
-                LIMIT 1
-                """,
-                (reviewer_name,)
-            ).fetchone()
+        # 2. Find a new, available card and lock it atomically.
+        available_card = Card.query.filter(
+            Card.status == 'available',
+            ~Card.id.in_(db.session.query(Review.card_id).filter(Review.reviewer_name == reviewer_name))
+        ).with_for_update().first()
 
-            if available_card:
-                card_id = available_card['id']
-                # Lock the found card for the current user
-                conn.execute(
-                    "UPDATE cards SET status = 'locked', locked_by = ?, locked_at = datetime('now') WHERE id = ?",
-                    (reviewer_name, card_id)
-                )
-                # Fetch the card data to display
-                card = conn.execute(
-                    "SELECT id, input_text AS input, output_text AS output FROM cards WHERE id = ?",
-                    (card_id,)
-                ).fetchone()
+        if available_card:
+            available_card.status = 'locked'
+            available_card.locked_by = reviewer_name
+            available_card.locked_at = datetime.datetime.now()
+            db.session.commit()
+            card = {
+                'id': available_card.id,
+                'input': available_card.input_text,
+                'output': available_card.output_text
+            }
 
     # Count the number of reviews completed by this user
-    review_count = conn.execute(
-        "SELECT COUNT(*) AS count FROM reviews WHERE reviewer_name = ?",
-        (reviewer_name,)
-    ).fetchone()['count']
+    review_count = Review.query.filter_by(reviewer_name=reviewer_name).count()
 
     # Get leaderboard: top 5 reviewers by review count
-    leaderboard = conn.execute(
-        """
-        SELECT reviewer_name AS name, COUNT(*) AS count
-        FROM reviews
-        GROUP BY reviewer_name
-        ORDER BY count DESC
-        LIMIT 5
-        """
-    ).fetchall()
+    leaderboard_query = db.session.query(
+        Review.reviewer_name.label('name'),
+        func.count(Review.id).label('count'),
+    ).group_by(Review.reviewer_name).order_by(desc('count')).limit(5).all()
+    leaderboard = [{'name': row.name, 'count': row.count} for row in leaderboard_query]
 
     # Calculate remaining cards for this user
-    remaining_query = """
-    SELECT COUNT(*) AS count FROM cards
-    WHERE status IN ('available', 'locked') 
-    AND (status = 'available' OR locked_by = ?)
-    AND id NOT IN (
-        SELECT card_id FROM reviews WHERE reviewer_name = ?
-    )
-    """
-    remaining = conn.execute(remaining_query, (reviewer_name, reviewer_name)).fetchone()['count']
-
-    conn.close()
+    remaining = Card.query.filter(
+        db.or_(
+            Card.status == 'available',
+            db.and_(Card.status == 'locked', Card.locked_by == reviewer_name)
+        ),
+        ~Card.id.in_(db.session.query(Review.card_id).filter(Review.reviewer_name == reviewer_name))
+    ).count()
 
     if not card:
         # No available cards left for this user to review
@@ -145,19 +184,21 @@ def decide():
     reason_key = request.form.get('reason')
     reason = GOOD_REASONS.get(reason_key, '') if status == 'good' else BAD_REASONS.get(reason_key, '')
 
-    conn = get_db_connection()
-    with conn:  # Transaction
-        # 1. Insert the review
-        conn.execute(
-            "INSERT INTO reviews (card_id, reviewer_name, decision, reason, time_spent) VALUES (?, ?, ?, ?, ?)",
-            (card_id, reviewer_name, status, reason, time_spent)
-        )
-        # 2. Mark the card as permanently reviewed
-        conn.execute(
-            "UPDATE cards SET status = 'reviewed', locked_by = NULL, locked_at = NULL WHERE id = ?",
-            (card_id,)
-        )
-    conn.close()
+    review = Review(
+        card_id=card_id,
+        reviewer_name=reviewer_name,
+        decision=status,
+        reason=reason,
+        time_spent=time_spent
+    )
+    db.session.add(review)
+
+    card_obj = Card.query.get(card_id)
+    card_obj.status = 'reviewed'
+    card_obj.locked_by = None
+    card_obj.locked_at = None
+
+    db.session.commit()
 
     # Clear the session variables for this card
     session.pop('card_id', None)
@@ -175,22 +216,34 @@ def undo():
         reviewer_name = session['name']
         card_id = session['card_id']
 
-        conn = get_db_connection()
-        cursor = conn.execute(
-            "UPDATE cards SET status = 'available', locked_by = NULL, locked_at = NULL WHERE id = ? AND locked_by = ?",
-            (card_id, reviewer_name)
-        )
-        conn.commit()
-        if cursor.rowcount > 0:
+        card = Card.query.filter_by(id=card_id, locked_by=reviewer_name).first()
+        if card:
+            card.status = 'available'
+            card.locked_by = None
+            card.locked_at = None
+            db.session.commit()
             flash('Card successfully returned to the pool!', 'success')
         else:
             flash('Card could not be undone. It may no longer be locked.', 'warning')
-        conn.close()
 
         session.pop('card_id', None)
         session.pop('start_time', None)
 
     return redirect(url_for('review'))
 
+
+from flask.cli import AppGroup
+
+init_cli = AppGroup('init')
+
+@init_cli.command('db')
+def init_db_command():
+    init_db()
+    print('Initialized the database.')
+
+app.cli.add_command(init_cli)
+
 if __name__ == '__main__':
+    with app.app_context():
+        init_db()  # Initialize database and populate cards
     app.run(debug=False)
