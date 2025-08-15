@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review Time!</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --success: #22c55e;
+            --error: #ef4444;
+            --neutral: #6b7280;
+            --neutral-light: #9ca3af;
+            --background: #f9fafb;
+            --card-bg: #ffffff;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+            --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+            --border-radius: 12px;
+            --transition: all 0.2s ease-in-out;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #a5b4fc, #6366f1);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 32px 16px;
+            color: #1f2937;
+        }
+
+        .app-container {
+            max-width: 480px;
+            width: 100%;
+            position: relative;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: var(--border-radius);
+            backdrop-filter: blur(16px);
+            box-shadow: var(--shadow-md);
+            padding: 24px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            font-size: 1.875rem;
+            font-weight: 700;
+            color: white;
+            letter-spacing: -0.025em;
+            margin: 0;
+        }
+
+        .counters {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .review-counter,
+        .remaining-counter {
+            background: rgba(255, 255, 255, 0.8);
+            padding: 6px 12px;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--primary-dark);
+            box-shadow: var(--shadow-sm);
+            white-space: nowrap;
+        }
+
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+
+        .flash-messages .success,
+        .flash-messages .warning {
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin: 8px 0;
+        }
+
+        .flash-messages .success {
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+
+        .flash-messages .warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        .leaderboard {
+            background: rgba(255, 255, 255, 0.8);
+            padding: 16px;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 24px;
+        }
+
+        .leaderboard h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--primary-dark);
+        }
+
+        .leaderboard ul {
+            list-style: none;
+        }
+
+        .leaderboard li {
+            display: flex;
+            justify-content: space-between;
+            margin: 6px 0;
+            color: #4b5563;
+        }
+
+        .leaderboard li span.name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .leaderboard li span.count {
+            min-width: 24px;
+            text-align: right;
+            font-weight: 500;
+        }
+
+        #card-container {
+            position: relative;
+            margin-bottom: 24px;
+        }
+
+        #card {
+            position: relative;
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-md);
+            padding: 24px;
+            cursor: grab;
+            user-select: none;
+            transition: var(--transition);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        #card:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        #card.grabbing {
+            cursor: grabbing;
+        }
+
+        .card-content > div {
+            margin-bottom: 24px;
+        }
+
+        .card-content > div:last-child {
+            margin-bottom: 0;
+        }
+
+        .label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--neutral-light);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+        }
+
+        .text {
+            font-size: 1rem;
+            font-weight: 400;
+            color: #1f2937;
+            line-height: 1.625;
+            word-wrap: break-word;
+        }
+
+        .stamp {
+            position: absolute;
+            top: 24px;
+            font-size: 2rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 8px 16px;
+            border: 3px solid;
+            border-radius: 8px;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+        }
+
+        #like-stamp {
+            color: var(--success);
+            border-color: var(--success);
+            left: 24px;
+            transform: rotate(-10deg);
+        }
+
+        #nope-stamp {
+            color: var(--error);
+            border-color: var(--error);
+            right: 24px;
+            transform: rotate(10deg);
+        }
+
+        #options-container {
+            display: none;
+            margin-top: 16px;
+        }
+
+        .options-wrapper {
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: 8px;
+            box-shadow: var(--shadow-sm);
+            animation: fadeIn 0.3s ease;
+        }
+
+        .options-wrapper button {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            padding: 12px 16px;
+            margin: 8px 0;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: var(--transition);
+            gap: 8px;
+        }
+
+        .options-wrapper button:hover,
+        .options-wrapper button:focus {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
+            outline: none;
+        }
+
+        #good-options button {
+            background: var(--success);
+        }
+
+        #good-options button:hover,
+        #good-options button:focus {
+            background: #16a34a;
+        }
+
+        #bad-options button {
+            background: var(--error);
+        }
+
+        #bad-options button:hover,
+        #bad-options button:focus {
+            background: #dc2626;
+        }
+
+        .back-button {
+            background: var(--primary);
+            justify-content: center;
+        }
+
+        .back-button:hover,
+        .back-button:focus {
+            background: var(--primary-dark);
+        }
+
+        #undo-form {
+            display: flex;
+            justify-content: center;
+        }
+
+        #undo-form button {
+            padding: 12px 24px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #undo-form button:hover,
+        #undo-form button:focus {
+            background: var(--primary-dark);
+            box-shadow: var(--shadow-sm);
+            outline: none;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 16px;
+            }
+
+            .app-container {
+                padding: 16px;
+            }
+
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .leaderboard {
+                margin-bottom: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="header">
+            <h1>Swipe & Review!</h1>
+            <div class="counters">
+                <div class="review-counter">Reviews: {{ review_count }}</div>
+                <div class="remaining-counter">Remaining: {{ remaining }}</div>
+            </div>
+        </div>
+        <div class="leaderboard">
+            <h3>Leaderboard</h3>
+            <ul>
+                {% for entry in leaderboard %}
+                    <li>
+                        <span class="name">{{ entry.name }}</span>
+                        <span class="count">{{ entry.count }}</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <p class="{{ category }}">{{ message }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        <div id="card-container">
+            <div id="card">
+                <div id="like-stamp" class="stamp">Like</div>
+                <div id="nope-stamp" class="stamp">Nope</div>
+                <div class="card-content">
+                    <div>
+                        <span class="label">Original Input</span>
+                        <p class="text">{{ card.input }}</p>
+                    </div>
+                    <div>
+                        <span class="label">Model Output</span>
+                        <p class="text">{{ card.output }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="options-container">
+            <div id="good-options" class="options-wrapper" style="display: none;">
+                <button onclick="selectGoodReason('1')">👍 Perfect</button>
+                <button onclick="selectGoodReason('2')">👌 Stylistic Difference</button>
+                <button onclick="goBack()" class="back-button">⬅ Back</button>
+            </div>
+            <div id="bad-options" class="options-wrapper" style="display: none;">
+                <button onclick="selectBadReason('1')">🤔 No Context</button>
+                <button onclick="selectBadReason('2')">😕 Misinterpreted</button>
+                <button onclick="selectBadReason('3')">❌ Completely Incorrect</button>
+                <button onclick="goBack()" class="back-button">⬅ Back</button>
+            </div>
+        </div>
+        {% if has_pending %}
+            <form id="undo-form" action="/undo" method="post">
+                <button type="submit">Undo Last 🔄</button>
+            </form>
+        {% endif %}
+    </div>
+    <script>
+        const card = document.getElementById('card');
+        const goodOptions = document.getElementById('good-options');
+        const badOptions = document.getElementById('bad-options');
+        const optionsContainer = document.getElementById('options-container');
+        const likeStamp = document.getElementById('like-stamp');
+        const nopeStamp = document.getElementById('nope-stamp');
+        const undoForm = document.getElementById('undo-form');
+
+        let startX = 0;
+        let deltaX = 0;
+        let isDragging = false;
+        let feedbackMode = false;
+        let currentOptionIndex = 0;
+        let currentOptions = [];
+
+        function updateCardTransform() {
+            const rotate = deltaX / 20;
+            const opacity = Math.min(Math.abs(deltaX) / (card.offsetWidth / 2), 1);
+            card.style.transform = `translateX(${deltaX}px) rotate(${rotate}deg)`;
+            likeStamp.style.opacity = deltaX > 0 ? opacity : 0;
+            nopeStamp.style.opacity = deltaX < 0 ? opacity : 0;
+        }
+
+        function flyOff(direction) {
+            const flyDistance = (direction === 'right' ? 1 : -1) * (window.innerWidth + card.offsetWidth);
+            const rotate = direction === 'right' ? 25 : -25;
+            card.style.transition = 'transform 0.4s ease-out, opacity 0.4s ease-out';
+            card.style.transform = `translateX(${flyDistance}px) rotate(${rotate}deg)`;
+            card.style.opacity = 0;
+            setTimeout(() => showOptions(direction), 400);
+        }
+
+        function showOptions(direction) {
+            feedbackMode = true;
+            optionsContainer.style.display = 'block';
+            card.style.transition = 'transform 0.3s ease-out, opacity 0.3s ease-out';
+            card.style.transform = 'translateX(0) rotate(0deg)';
+            card.style.opacity = 1;
+            likeStamp.style.opacity = 0;
+            nopeStamp.style.opacity = 0;
+            if (direction === 'right') {
+                goodOptions.style.display = 'block';
+                badOptions.style.display = 'none';
+                currentOptions = Array.from(goodOptions.getElementsByTagName('button'));
+            } else {
+                badOptions.style.display = 'block';
+                goodOptions.style.display = 'none';
+                currentOptions = Array.from(badOptions.getElementsByTagName('button'));
+            }
+            currentOptionIndex = 0;
+            currentOptions[currentOptionIndex].focus();
+        }
+
+        function resetCard() {
+            card.style.transition = 'transform 0.3s ease-out';
+            card.style.transform = 'translateX(0) rotate(0deg)';
+            likeStamp.style.opacity = 0;
+            nopeStamp.style.opacity = 0;
+            deltaX = 0;
+        }
+
+        function goBack() {
+            feedbackMode = false;
+            optionsContainer.style.display = 'none';
+            goodOptions.style.display = 'none';
+            badOptions.style.display = 'none';
+            resetCard();
+        }
+
+        function handleSwipeEnd() {
+            if (Math.abs(deltaX) < 120) {
+                resetCard();
+                return;
+            }
+            flyOff(deltaX > 0 ? 'right' : 'left');
+        }
+
+        card.addEventListener('mousedown', (e) => {
+            if (feedbackMode) return;
+            isDragging = true;
+            startX = e.clientX;
+            card.classList.add('grabbing');
+            card.style.transition = 'none';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging && !feedbackMode) {
+                deltaX = e.clientX - startX;
+                updateCardTransform();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging && !feedbackMode) {
+                isDragging = false;
+                card.classList.remove('grabbing');
+                handleSwipeEnd();
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                if (!feedbackMode) {
+                    if (e.key === 'ArrowLeft') {
+                        flyOff('left');
+                    } else if (e.key === 'ArrowRight') {
+                        flyOff('right');
+                    } else if (e.key === 'Backspace' && undoForm) {
+                        e.preventDefault();
+                        undoForm.querySelector('button').click();
+                    }
+                } else {
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        currentOptionIndex = (currentOptionIndex + 1) % currentOptions.length;
+                        currentOptions[currentOptionIndex].focus();
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        currentOptionIndex = (currentOptionIndex - 1 + currentOptions.length) % currentOptions.length;
+                        currentOptions[currentOptionIndex].focus();
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        currentOptions[currentOptionIndex].click();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        goBack();
+                    }
+                }
+            }
+        });
+
+        function decide(direction, reason) {
+            feedbackMode = false;
+            fetch('/decide', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    'direction': direction,
+                    'reason': reason,
+                    'input': {{ card.input | tojson }},
+                    'output': {{ card.output | tojson }},
+                    'card_id': {{ card.id }}
+                })
+            }).then(() => location.reload());
+        }
+
+        function selectGoodReason(reason) {
+            decide('right', reason);
+        }
+
+        function selectBadReason(reason) {
+            decide('left', reason);
+        }
+    </script>
+</body>
+</html>
